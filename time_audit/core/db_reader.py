@@ -13,8 +13,11 @@ from typing import Optional
 
 
 def discover_screenpipe_db() -> Optional[str]:
-    """自动发现Screenpipe数据库位置"""
+    """自动发现Screenpipe数据库位置（兼容新旧版本路径）"""
     candidates = [
+        # 新版（0.3.x）
+        os.path.expanduser("~/.screenpipe/db.sqlite"),
+        # 旧版
         os.path.expanduser("~/.screenpipe/db/screenpipe.db"),
         os.path.expanduser("~/Library/Application Support/screenpipe/screenpipe.db"),
         os.path.expanduser("~/Library/Application Support/screenpipe/db/screenpipe.db"),
@@ -40,33 +43,65 @@ def read_screenpipe_events(db_path: str, days: int = 14) -> list:
     cursor = conn.cursor()
     
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-    
+
     # 尝试不同的表结构（Screenpipe不同版本可能有差异）
     events = []
-    
-    # 查询1: frames表（屏幕帧 + OCR文本）
+
+    # 查询0: 新版 0.3.x — frames 表合并了 full_text/accessibility，单表搞定
     try:
         cursor.execute("""
-            SELECT timestamp, app_name, window_name, ocr_text, file_path
+            SELECT timestamp, app_name, window_name,
+                   COALESCE(full_text, accessibility_text, '') AS text,
+                   COALESCE(snapshot_path, '') AS path,
+                   COALESCE(browser_url, '') AS url
             FROM frames
             WHERE timestamp >= ?
+              AND (full_text IS NOT NULL OR accessibility_text IS NOT NULL)
             ORDER BY timestamp ASC
             LIMIT 50000
         """, (cutoff,))
         for row in cursor.fetchall():
+            content = (row["text"] or "")[:500]
+            if row["url"]:
+                content = f"[{row['url']}] {content}"
             events.append({
                 "timestamp": row["timestamp"],
                 "app": row["app_name"] or "unknown",
                 "window": row["window_name"] or "",
                 "event_type": "screen",
-                "content": (row["ocr_text"] or "")[:500],
-                "file_path": row["file_path"] or "",
-                "source": "screenpipe.frames"
+                "content": content,
+                "file_path": row["path"] or "",
+                "source": "screenpipe.frames.v2"
             })
         if events:
-            print(f"  📄 从 frames 表读取了 {len(events)} 条记录")
+            print(f"  📄 从 frames(v0.3+) 读取了 {len(events)} 条记录")
     except sqlite3.OperationalError:
         pass
+
+    # 查询1: 旧版 frames 表（带 ocr_text 字段）
+    if not events:
+        try:
+            cursor.execute("""
+                SELECT timestamp, app_name, window_name, ocr_text, file_path
+                FROM frames
+                WHERE timestamp >= ?
+                ORDER BY timestamp ASC
+                LIMIT 50000
+            """, (cutoff,))
+            for row in cursor.fetchall():
+                events.append({
+                    "timestamp": row["timestamp"],
+                    "app": row["app_name"] or "unknown",
+                    "window": row["window_name"] or "",
+                    "event_type": "screen",
+                    "content": (row["ocr_text"] or "")[:500],
+                    "file_path": row["file_path"] or "",
+                    "source": "screenpipe.frames.legacy"
+                })
+            if events:
+                print(f"  📄 从 frames(legacy) 读取了 {len(events)} 条记录")
+        except sqlite3.OperationalError:
+            pass
 
     # 查询2: audio_transcriptions表（音频转文字）
     if not events:

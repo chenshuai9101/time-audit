@@ -1,0 +1,2 @@
+# 时间审计 — 依赖（仅一项；LLM 通过本地 Ollama HTTP 访问，无需额外 Python 包）
+pyyaml>=6.0

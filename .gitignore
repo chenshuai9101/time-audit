@@ -1,0 +1,13 @@
+# .gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.log
+.DS_Store
+dist/
+*.egg-info/
+build/
+reports/
+last_report.json
+.venv/
+venv/

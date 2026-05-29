@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "time-audit"
+version = "2.0.0"
+description = "本地 LLM 行为分析中间件 — 把 Screenpipe 录制变成 LLM 可消化的会话片段，让本地 AI 找出可 skill 化的工作模式。"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+dependencies = [
+    "pyyaml>=6.0",
+]
+keywords = ["screenpipe", "ollama", "local-llm", "behavior-analysis", "automation", "skill-mining"]
+
+[project.urls]
+Homepage = "https://github.com/chenshuai9101/time-audit"
+Repository = "https://github.com/chenshuai9101/time-audit.git"
+
+[project.scripts]
+time-audit = "time_audit.main:main"
+
+[tool.setuptools.packages.find]
+include = ["time_audit*"]

@@ -1,0 +1,41 @@
+# 时间审计 v2 — 本地 LLM 行为分析中间件配置
+
+screenpipe:
+  db_path: ""             # 留空自动搜索 ~/.screenpipe/db/screenpipe.db 等位置
+  auto_discover: true
+
+analysis:
+  lookback_days: 14
+  # 会话切分：相邻事件间隔超过该值视为新会话
+  session_gap_seconds: 300
+  # 同一窗口内连续 OCR 文本相似度高于该阈值视为重复，丢弃
+  dedupe_similarity: 0.85
+  # 单个会话最多保留多少帧（超过则采样首/中/尾 + 高熵帧）
+  max_frames_per_session: 12
+  # 单条 OCR 文本截断长度（喂给 LLM 前）
+  max_ocr_chars: 240
+  # 一批投喂给 LLM 的最大会话数（避免超 context）
+  sessions_per_batch: 25
+
+llm:
+  enabled: true
+  provider: "ollama"                    # 目前只支持 ollama
+  endpoint: "http://localhost:11434"
+  model: "qwen2.5:7b"                   # 你本机已装的模型；如装了 14b/32b 改这里
+  timeout_seconds: 600
+  temperature: 0.2
+  # 失败时是否回退到 dry-run（仅输出压缩后的 sessions）
+  fallback_to_dryrun: true
+
+  # 三层分析的开关
+  analyze_points: true                  # 点：单次低效动作
+  analyze_lines: true                   # 线：跨 app 固定流程
+  analyze_surfaces: true                # 面：职业/角色级工作模式
+
+reports:
+  output_dir: "~/Desktop/时间审计/reports"
+  keep_raw_sessions: true               # 报告内附带压缩后的 sessions（便于调试）
+
+logging:
+  level: "INFO"
+  file: "~/Desktop/时间审计/engine.log"

@@ -78,6 +78,13 @@ def load_config(config_path: str = None) -> dict:
             out[top].update(cfg[top])
         else:
             out[top] = cfg[top]
+
+    # 展开用户路径：yaml 里写的 "~/..." 字符串会覆盖默认的已展开值，
+    # 不在此处展开就会写进字面量 "~" 目录。reader/writer 必须用同一套展开规则。
+    out["reports"]["output_dir"] = os.path.expanduser(out["reports"]["output_dir"])
+    if out.get("logging", {}).get("file"):
+        out["logging"]["file"] = os.path.expanduser(out["logging"]["file"])
+
     return out
 
 

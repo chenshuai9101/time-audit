@@ -36,6 +36,12 @@ DEFAULT_CONFIG = {
         "provider": "ollama",
         "endpoint": "http://localhost:11434",
         "model": "qwen2.5:14b",
+        "cloud": {
+            "base_url": "https://api.deepseek.com/v1",
+            "model": "deepseek-chat",
+            "api_key_env": "TIME_AUDIT_API_KEY",
+            "json_mode": True,
+        },
         "timeout_seconds": 600,
         "temperature": 0.2,
         "fallback_to_dryrun": True,
@@ -75,6 +81,25 @@ def load_config(config_path: str = None) -> dict:
     return out
 
 
+def _llm_describe(cfg: dict) -> str:
+    """安全地拿到当前 provider 的一行描述（不可用时退回原始字段）"""
+    try:
+        from time_audit.core.llm_providers import get_provider
+        return get_provider(cfg["llm"]).describe()
+    except Exception:
+        return f"{cfg['llm'].get('model', '?')} @ {cfg['llm'].get('endpoint', '?')}"
+
+
+def _maybe_warn_cloud(cfg: dict):
+    """云端 provider 时打印数据离机警告（隐私品牌的硬约束）"""
+    if (cfg["llm"].get("provider") or "ollama").lower() in ("openai", "cloud", "openai-compatible"):
+        base_url = (cfg["llm"].get("cloud") or {}).get("base_url", "?")
+        print("")
+        print("⚠️  云端模式：压缩后的屏幕数据摘要将发送至")
+        print(f"      {base_url}")
+        print("   本地 Ollama 模式数据不离机；如需隐私优先，请用 provider: ollama。")
+
+
 def _print_banner(report_id: str, cfg: dict):
     print("")
     print("╔══════════════════════════════════════════════════════════╗")
@@ -83,7 +108,7 @@ def _print_banner(report_id: str, cfg: dict):
     print(f"║   版本     : {__version__}")
     print(f"║   报告 ID  : {report_id}")
     print(f"║   分析周期 : 过去 {cfg['analysis']['lookback_days']} 天")
-    print(f"║   LLM 模型 : {cfg['llm']['model']} @ {cfg['llm']['endpoint']}")
+    print(f"║   LLM 模型 : {_llm_describe(cfg)}")
     print("╚══════════════════════════════════════════════════════════╝")
 
 
@@ -114,6 +139,7 @@ def run_analysis(cfg: dict, force_dryrun: bool = False) -> dict:
     llm_result = {"points": [], "lines": [], "surfaces": []}
 
     if not dry_run:
+        _maybe_warn_cloud(cfg)
         check = llm_analyzer.preflight(llm_cfg)
         if not check["ok"]:
             print(f"\n⚠️  LLM 健康检查未通过：{check['reason']}")
@@ -165,21 +191,29 @@ def show_last_report(cfg: dict):
 
 
 def check_llm(cfg: dict):
-    """诊断子命令：探活 Ollama 并列模型"""
+    """诊断子命令：探活当前 provider（本地 Ollama 或云端）"""
     llm_cfg = cfg["llm"]
-    print(f"探测 Ollama: {llm_cfg['endpoint']}")
+    desc = _llm_describe(cfg)
+    print(f"探测 LLM provider: {desc}")
+    _maybe_warn_cloud(cfg)
     check = llm_analyzer.preflight(llm_cfg)
     if check["ok"]:
-        print("✅ Ollama 在线")
-        print(f"   配置模型: {llm_cfg['model']}")
-        print(f"   已安装 : {', '.join(check['models']) or '无'}")
+        print("✅ LLM 可用")
+        if check.get("models"):
+            print(f"   已安装 : {', '.join(check['models'])}")
     else:
         print(f"❌ {check['reason']}")
-        if check["models"]:
+        if check.get("models"):
             print(f"   已安装 : {', '.join(check['models'])}")
-        print("\n安装提示：")
-        print("   brew install ollama && ollama serve")
-        print(f"   ollama pull {llm_cfg['model']}")
+        if check.get("provider") == "ollama":
+            print("\n本地安装提示：")
+            print("   brew install ollama && ollama serve")
+            print(f"   ollama pull {llm_cfg.get('model', 'qwen2.5:7b')}")
+        else:
+            env = (llm_cfg.get("cloud") or {}).get("api_key_env", "TIME_AUDIT_API_KEY")
+            print("\n云端使用提示：")
+            print(f"   export {env}=你的key")
+            print("   并确认 config 中 llm.cloud.base_url / model 正确")
 
 
 def main():
@@ -190,7 +224,11 @@ def main():
     parser.add_argument("--days", type=int, default=0, help="分析天数")
     parser.add_argument("--report", action="store_true", help="显示最近一份报告")
     parser.add_argument("--dryrun", action="store_true", help="跳过 LLM，仅做事件压缩")
-    parser.add_argument("--check-llm", action="store_true", help="探活 Ollama 与模型")
+    parser.add_argument("--check-llm", action="store_true", help="探活当前 provider（本地/云端）")
+    parser.add_argument("--provider", choices=["ollama", "openai"], default="",
+                        help="临时覆盖 provider：ollama(本地) | openai(云端)")
+    parser.add_argument("--cloud", action="store_true",
+                        help="--provider openai 的快捷方式（用云端模型）")
     parser.add_argument("--config", default="", help="配置文件路径")
     parser.add_argument("--version", action="version", version=f"时间审计 v{__version__}")
     args = parser.parse_args()
@@ -198,6 +236,9 @@ def main():
     cfg = load_config(args.config or None)
     if args.days > 0:
         cfg["analysis"]["lookback_days"] = args.days
+    provider_override = args.provider or ("openai" if args.cloud else "")
+    if provider_override:
+        cfg["llm"]["provider"] = provider_override
 
     if args.check_llm:
         check_llm(cfg)

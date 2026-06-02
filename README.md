@@ -118,6 +118,20 @@ time-audit --report                 # 看最近报告
 
 完整流程在 7B 模型上 5 分钟左右，14B 模型 10–15 分钟。**不实时，只批跑**——这是隐私和性能之间的取舍。
 
+### 路径 D · 没有大显存，想用云端模型快速试
+
+如果你机器跑不动 14B，或只想先尝鲜，可以切到云端。**一个 OpenAI 兼容配置**就能对接 DeepSeek / 通义 Qwen API / OpenAI / Moonshot / OpenRouter 等：
+
+```bash
+export TIME_AUDIT_API_KEY=sk-xxx        # key 只从环境变量读，不写进配置文件
+time-audit --check-llm --cloud          # 探活云端
+time-audit --days 14 --cloud            # 用云端模型跑分析
+```
+
+云端的 `base_url` / `model` 在 `config/time_audit.yaml` 的 `llm.cloud` 里改（默认指向 DeepSeek）。也可以把 `llm.provider` 直接设为 `openai` 作为默认。
+
+> ⚠️ **隐私取舍**：云端模式会把**压缩后的屏幕数据摘要**发送到你配置的服务商。本地 Ollama 模式数据**不离机**，仍是隐私优先的默认选择。两种模式按需切换——能跑本地就跑本地，跑不动再用云端。
+
 ### 路径 C · Agent 开发者
 
 报告是结构化 JSON，schema 在 `time_audit/core/report_builder.py` 的 `build_report()`。直接读：
@@ -169,7 +183,8 @@ time-audit/
 │       ├── event_compressor.py   # ⭐ 事件流压缩（核心）
 │       ├── frequency_analyzer.py # 给 LLM 的 context hint
 │       ├── prompts.py            # 点/线/面 三套 prompt
-│       ├── llm_analyzer.py       # Ollama HTTP 调用与批处理
+│       ├── llm_providers.py      # 模型 provider：本地 Ollama / 云端 OpenAI 兼容
+│       ├── llm_analyzer.py       # 分批跑三层并合并（调 provider）
 │       └── report_builder.py     # LLM 输出 → JSON+MD 渲染
 ├── config/time_audit.yaml        # 阈值与模型配置
 ├── reports/                      # 历史报告
@@ -186,7 +201,7 @@ time-audit/
 不会。检查 `core/llm_analyzer.py` 里唯一的网络调用——只指向 `localhost:11434`。
 
 **Q: 为什么不用 GPT-4 / Claude，效果不是更好？**
-当然更好。但这违背隐私前提。屏幕录制是最敏感的数据之一，时间审计选择"用本地 7B 也要做出能用的产品"作为硬约束。如果你不在乎隐私，需求和 Rewind / Microsoft Recall 的重合度更高。
+当然更好。所以现在**支持了**——`--cloud` 即可切到任意 OpenAI 兼容云端（见路径 D）。但默认仍是本地：屏幕录制是最敏感的数据之一，时间审计把"本地 7B 也要做出能用的产品"作为硬约束，云端是给跑不动本地的人的可选项，不是默认。在乎隐私就跑本地，在乎质量且不介意数据离机就用云端，你自己定。
 
 **Q: 跑出来的洞察是错的怎么办？**
 每条洞察带 `evidence_sessions`，可以回溯到原始事件。错的多半因为：① 数据量太少（< 7 天）；② 模型太小（< 7B）；③ Screenpipe OCR 质量差。先调这三处。

@@ -2,66 +2,18 @@
 时间审计 v2 — LLM 分析层
 
 职责：
-  1. 探活本地 Ollama
-  2. 把 sessions 分批喂给本地模型，分别跑 点 / 线 / 面 三套 prompt
+  1. 通过 provider 抽象层探活模型（本地 Ollama 或云端 OpenAI 兼容）
+  2. 把 sessions 分批喂给模型，分别跑 点 / 线 / 面 三套 prompt
   3. 解析 JSON 输出（容错），合并多批结果
 
-只依赖 stdlib。HTTP 走 urllib，JSON 走 json。
+模型调用细节（本地 vs 云端）由 core/llm_providers.py 屏蔽。
+本模块只关心"分批 + 跑三层 + 合并"。
 """
 import json
-import urllib.request
-import urllib.error
 from typing import Optional
 
 from time_audit.core import prompts, event_compressor
-
-
-def ping_ollama(endpoint: str, timeout: int = 5) -> bool:
-    """探测 Ollama 是否在跑"""
-    try:
-        with urllib.request.urlopen(f"{endpoint}/api/tags", timeout=timeout) as r:
-            return r.status == 200
-    except Exception:
-        return False
-
-
-def list_models(endpoint: str, timeout: int = 5) -> list:
-    """列出本地已安装的模型"""
-    try:
-        with urllib.request.urlopen(f"{endpoint}/api/tags", timeout=timeout) as r:
-            data = json.loads(r.read())
-            return [m["name"] for m in data.get("models", [])]
-    except Exception:
-        return []
-
-
-def call_ollama(endpoint: str, model: str, system: str, user: str,
-                temperature: float = 0.2, timeout: int = 600) -> Optional[str]:
-    """单次调用 Ollama，返回 raw response 字符串"""
-    body = {
-        "model": model,
-        "system": system,
-        "prompt": user,
-        "stream": False,
-        "format": "json",
-        "options": {"temperature": temperature},
-    }
-    req = urllib.request.Request(
-        f"{endpoint}/api/generate",
-        data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            payload = json.loads(r.read())
-            return payload.get("response", "")
-    except urllib.error.HTTPError as e:
-        print(f"   ❌ Ollama HTTP {e.code}: {e.reason}")
-        return None
-    except Exception as e:
-        print(f"   ❌ Ollama 调用失败: {e}")
-        return None
+from time_audit.core.llm_providers import get_provider, BaseProvider
 
 
 def _parse_json_lenient(raw: str, expected_key: str) -> list:
@@ -109,18 +61,16 @@ def _build_context_hint(sessions: list, app_freq: dict) -> str:
 
 
 def _run_single_layer(layer_name: str, system: str, user_template: str,
-                      sessions: list, app_freq: dict, cfg: dict,
-                      result_key: str) -> list:
+                      sessions: list, app_freq: dict, provider: BaseProvider,
+                      cfg: dict, result_key: str) -> list:
     """对一层（点/线/面）做批量调用并合并结果"""
-    endpoint = cfg["endpoint"]
-    model = cfg["model"]
     temperature = cfg.get("temperature", 0.2)
     timeout = cfg.get("timeout_seconds", 600)
     batch_size = cfg.get("sessions_per_batch", 25)
 
     print(f"\n🤖 LLM 分析 — {layer_name}")
     batches = _batch(sessions, batch_size)
-    print(f"   {len(sessions)} 会话 → {len(batches)} 批，模型 {model}")
+    print(f"   {len(sessions)} 会话 → {len(batches)} 批，{provider.describe()}")
 
     merged = []
     for i, batch in enumerate(batches, 1):
@@ -129,8 +79,8 @@ def _run_single_layer(layer_name: str, system: str, user_template: str,
         user_prompt = prompts.render(user_template, sessions_text, context)
 
         print(f"   批 {i}/{len(batches)}: 调用中...", end="", flush=True)
-        raw = call_ollama(endpoint, model, system, user_prompt,
-                          temperature=temperature, timeout=timeout)
+        raw = provider.chat(system, user_prompt,
+                            temperature=temperature, timeout=timeout)
         if raw is None:
             print(" 失败")
             continue
@@ -149,6 +99,7 @@ def analyze(sessions: list, app_freq: dict, llm_cfg: dict,
 
     cfg = dict(llm_cfg)
     cfg["sessions_per_batch"] = sessions_per_batch
+    provider = get_provider(cfg)
 
     out = {"points": [], "lines": [], "surfaces": []}
 
@@ -156,40 +107,32 @@ def analyze(sessions: list, app_freq: dict, llm_cfg: dict,
         out["points"] = _run_single_layer(
             "点（单点低效动作）",
             prompts.POINT_SYSTEM, prompts.POINT_USER,
-            sessions, app_freq, cfg, "points")
+            sessions, app_freq, provider, cfg, "points")
 
     if cfg.get("analyze_lines", True):
         out["lines"] = _run_single_layer(
             "线（跨App固定流程）",
             prompts.LINE_SYSTEM, prompts.LINE_USER,
-            sessions, app_freq, cfg, "lines")
+            sessions, app_freq, provider, cfg, "lines")
 
     if cfg.get("analyze_surfaces", True):
         # 面：用更大的批（甚至全量）效果更好
         out["surfaces"] = _run_single_layer(
             "面（角色级工作模式）",
             prompts.SURFACE_SYSTEM, prompts.SURFACE_USER,
-            sessions, app_freq, cfg, "surfaces")
+            sessions, app_freq, provider, cfg, "surfaces")
 
     return out
 
 
 def preflight(llm_cfg: dict) -> dict:
-    """LLM 健康检查，返回 {ok, reason, models}"""
-    endpoint = llm_cfg.get("endpoint", "http://localhost:11434")
-    model = llm_cfg.get("model", "")
-
-    if not ping_ollama(endpoint):
-        return {
-            "ok": False,
-            "reason": f"Ollama 未运行（{endpoint} 不可达）",
-            "models": [],
-        }
-    models = list_models(endpoint)
-    if model and model not in models:
-        return {
-            "ok": False,
-            "reason": f"模型 {model} 未安装。已安装: {models or '无'}",
-            "models": models,
-        }
-    return {"ok": True, "reason": "", "models": models}
+    """LLM 健康检查，返回 {ok, reason, models, provider, is_cloud}"""
+    try:
+        provider = get_provider(llm_cfg)
+    except Exception as e:
+        return {"ok": False, "reason": str(e), "models": [],
+                "provider": llm_cfg.get("provider", "?"), "is_cloud": False}
+    result = provider.preflight()
+    result["provider"] = provider.name
+    result["is_cloud"] = provider.is_cloud()
+    return result

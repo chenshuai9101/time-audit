@@ -14,12 +14,19 @@ dependencies = [
 ]
 keywords = ["screenpipe", "ollama", "local-llm", "behavior-analysis", "automation", "skill-mining"]
 
+[project.optional-dependencies]
+# 仅 MCP server 模式需要；核心 CLI 保持零额外依赖。装法：pip install -e ".[mcp]"
+mcp = [
+    "mcp>=1.2",
+]
+
 [project.urls]
 Homepage = "https://github.com/chenshuai9101/time-audit"
 Repository = "https://github.com/chenshuai9101/time-audit.git"
 
 [project.scripts]
 time-audit = "time_audit.main:main"
+time-audit-mcp = "time_audit.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["time_audit*"]

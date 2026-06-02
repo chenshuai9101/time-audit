@@ -37,11 +37,11 @@
 - [ ] `--dryrun` 打磨成"60 秒出价值"的 onboarding。
 
 ### ② 做 MCP server 模式（站上"底层"位）
-- [ ] roadmap v2.2：让 Agent 直连读"最值得自动化的流程"，而非读文件。
-- [ ] 这是区别于"又一个时间追踪工具"的核心动作，也是分发渠道（出现在 Claude Desktop / Cursor 的 server 列表）。
+- [x] roadmap v2.2：让 Agent 直连读"最值得自动化的流程"，而非读文件。✅ 已完成（list_reports / get_report_summary / query_automation_opportunities）
+- [x] 这是区别于"又一个时间追踪工具"的核心动作，也是分发渠道（出现在 Claude Desktop / Cursor 的 server 列表）。
 
 ### ③ 发布 schema 规范（抢标准第一锤）
-- [ ] 把报告 JSON 的"自动化机会"结构抽成带版本号的公开规范 + 文档 + 示例。
+- [x] 把报告的"自动化机会"结构抽成带版本号的公开规范 + 示例。✅ 已完成（AOS v1.0.0：`docs/automation-opportunity-schema.md` + `.v1.json`，附 conformance 测试，真实输出已通过 JSON Schema 校验）
 - [ ] 公开邀请对接（Fara / Magentic-UI / OpenClaw / 各 Agent 平台）。
 
 ### ④ 传播 + 第一单输血

@@ -19,6 +19,10 @@ _RANK = {"low": 1, "med": 2, "medium": 2, "high": 3}
 
 VALID_LAYERS = ("point", "line", "surface", "all")
 
+# Automation Opportunity Schema 版本（语义化）。规范见 docs/automation-opportunity-schema.md。
+# extract_opportunities 产出的每条机会、以及 MCP query 响应都按此版本。
+SCHEMA_VERSION = "1.0.0"
+
 
 def _rank(value: Optional[str]) -> int:
     """把 low/med/high 映射成可比较的数；未知/缺失记 0。"""

@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chenshuai9101/time-audit/schema/automation-opportunity/v1",
+  "title": "Automation Opportunity Schema (AOS)",
+  "description": "可移植的契约：描述一条值得自动化的工作机会，以及一批机会的返回信封。版本 1.0.0。规范见 automation-opportunity-schema.md。",
+  "type": "object",
+  "required": ["schema_version", "report_id", "count", "opportunities"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "AOS 语义化版本，如 1.0.0",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "report_id": {
+      "type": "string",
+      "description": "数据来源标识（产出方自定义）"
+    },
+    "filters": {
+      "type": "object",
+      "description": "本次返回所应用的过滤条件（回显，便于审计）",
+      "properties": {
+        "layer": { "type": ["string", "null"] },
+        "min_confidence": { "type": ["string", "null"] },
+        "max_difficulty": { "type": ["string", "null"] }
+      }
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "opportunities 条数"
+    },
+    "opportunities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/opportunity" }
+    }
+  },
+  "$defs": {
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "med", "medium", "high"],
+      "description": "置信度。medium 是 med 的别名。"
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": ["low", "med", "medium", "high"],
+      "description": "自动化难度。medium 是 med 的别名。"
+    },
+    "common": {
+      "type": "object",
+      "required": ["id", "layer", "confidence", "evidence_sessions"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "报告内稳定编号，如 P-01 / L-02 / F-03",
+          "pattern": "^[PLF]-\\d+$"
+        },
+        "layer": { "type": "string", "enum": ["point", "line", "surface"] },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "evidence_sessions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "证据会话编号，可回溯原始上下文"
+        },
+        "execution_probe": {
+          "type": "object",
+          "description": "可选：执行层回写的实测可自动化性",
+          "properties": {
+            "agent": { "type": "string" },
+            "status": {
+              "type": "string",
+              "enum": ["not_run", "success", "partial", "failed", "blocked"]
+            },
+            "step_count": { "type": "integer", "minimum": 0 },
+            "failure_point": { "type": "string" },
+            "risk_flags": { "type": "array", "items": { "type": "string" } },
+            "verified_savings_min": { "type": "number" }
+          }
+        }
+      },
+      "patternProperties": {
+        "^x-": {}
+      }
+    },
+    "opportunity": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "oneOf": [
+        { "$ref": "#/$defs/point" },
+        { "$ref": "#/$defs/line" },
+        { "$ref": "#/$defs/surface" }
+      ]
+    },
+    "point": {
+      "type": "object",
+      "properties": {
+        "layer": { "const": "point" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "frequency_hint": { "type": "string" },
+        "skill_suggestion": { "type": "string" }
+      },
+      "required": ["layer", "title", "description"]
+    },
+    "line": {
+      "type": "object",
+      "properties": {
+        "layer": { "const": "line" },
+        "workflow_name": { "type": "string" },
+        "trigger": { "type": "string" },
+        "apps_involved": { "type": "array", "items": { "type": "string" } },
+        "steps": { "type": "array", "items": { "type": "string" } },
+        "occurrence_count": { "type": ["integer", "null"] },
+        "avg_duration_min": { "type": ["number", "null"] },
+        "estimated_weekly_savings_min": { "type": ["number", "null"] },
+        "automation_difficulty": { "$ref": "#/$defs/difficulty" },
+        "skill_suggestion": { "type": "string" }
+      },
+      "required": ["layer", "workflow_name"]
+    },
+    "surface": {
+      "type": "object",
+      "properties": {
+        "layer": { "const": "surface" },
+        "insight_title": { "type": "string" },
+        "observation": { "type": "string" },
+        "implication": { "type": "string" },
+        "recommendation": { "type": "string" }
+      },
+      "required": ["layer", "insight_title", "observation"]
+    }
+  }
+}

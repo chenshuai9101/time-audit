@@ -212,6 +212,7 @@ def query_automation_opportunities(params: QueryOpportunitiesInput) -> str:
     Returns:
         str: JSON 字符串：
         {
+          "schema_version": str,   # Automation Opportunity Schema 版本，如 "1.0.0"
           "report_id": str,
           "filters": {"layer": str, "min_confidence": str|null, "max_difficulty": str|null},
           "count": int,
@@ -239,6 +240,7 @@ def query_automation_opportunities(params: QueryOpportunitiesInput) -> str:
             max_difficulty=params.max_difficulty.value if params.max_difficulty else None,
         )
         return _dumps({
+            "schema_version": report_query.SCHEMA_VERSION,
             "report_id": report.get("report_meta", {}).get("id", params.report_id or ""),
             "filters": {
                 "layer": params.layer.value,

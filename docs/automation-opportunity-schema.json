@@ -1,19 +1,27 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/chenshuai9101/time-audit/schema/automation-opportunity/v1",
+  "$id": "urn:aos:opportunity-schema",
   "title": "Automation Opportunity Schema (AOS)",
-  "description": "可移植的契约：描述一条值得自动化的工作机会，以及一批机会的返回信封。版本 1.0.0。规范见 automation-opportunity-schema.md。",
+  "description": "可移植的契约：描述一条值得自动化的工作机会，以及一批机会的返回信封。当前版本见 schema_version 字段（语义化版本）。规范见 automation-opportunity-schema.md。$id 用 host 无关的 URN，便于脱离任何具体仓库流转。",
   "type": "object",
   "required": ["schema_version", "report_id", "count", "opportunities"],
   "properties": {
     "schema_version": {
       "type": "string",
-      "description": "AOS 语义化版本，如 1.0.0",
+      "description": "AOS 语义化版本，如 0.1.0。版本的唯一真源是产出方的 SCHEMA_VERSION 常量。",
       "pattern": "^\\d+\\.\\d+\\.\\d+$"
     },
     "report_id": {
       "type": "string",
-      "description": "数据来源标识（产出方自定义）"
+      "description": "数据来源标识（产出方自定义）。与 opportunity.evidence_sessions 一起构成证据解析键（见规范『证据解析』）。"
+    },
+    "produced_at": {
+      "type": "string",
+      "description": "可选：产出时间（产出方自定义格式，建议 ISO-8601 或报告生成时间）。便于消费方判断新鲜度。"
+    },
+    "producer": {
+      "type": "string",
+      "description": "可选：产出方标识，如 'time-audit/v2 (LLM-driven)'。便于消费方判断来源与信任度。"
     },
     "filters": {
       "type": "object",
@@ -35,15 +43,10 @@
     }
   },
   "$defs": {
-    "confidence": {
+    "level": {
       "type": "string",
-      "enum": ["low", "med", "medium", "high"],
-      "description": "置信度。medium 是 med 的别名。"
-    },
-    "difficulty": {
-      "type": "string",
-      "enum": ["low", "med", "medium", "high"],
-      "description": "自动化难度。medium 是 med 的别名。"
+      "enum": ["low", "med", "high"],
+      "description": "分级。规范拼写仅 low/med/high。产出方必须发规范拼写；'medium' 仅作为入参别名被容忍，产出方须归一化为 'med'，不得直接发出。"
     },
     "common": {
       "type": "object",
@@ -51,19 +54,24 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "报告内稳定编号，如 P-01 / L-02 / F-03",
+          "description": "报告内稳定编号（位置编号），如 P-01 / L-02 / F-03。仅在单份报告内稳定，不跨报告。跨报告身份用 fingerprint。",
           "pattern": "^[PLF]-\\d+$"
         },
+        "fingerprint": {
+          "type": "string",
+          "description": "可选：跨报告稳定身份，由机会的内容特征派生。execution_probe 回写、机会去重与累积统计应以此为 join key（而非位置编号 id）。",
+          "pattern": "^fp_[0-9a-f]{12}$"
+        },
         "layer": { "type": "string", "enum": ["point", "line", "surface"] },
-        "confidence": { "$ref": "#/$defs/confidence" },
+        "confidence": { "$ref": "#/$defs/level" },
         "evidence_sessions": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "证据会话编号，可回溯原始上下文"
+          "description": "证据会话编号，配合信封 report_id 可回溯原始上下文（见规范『证据解析』）。"
         },
         "execution_probe": {
           "type": "object",
-          "description": "可选：执行层回写的实测可自动化性",
+          "description": "可选：执行层回写的实测可自动化性。把 automation_difficulty / estimated_weekly_savings_min 从 LLM 估算升级为实测。",
           "properties": {
             "agent": { "type": "string" },
             "status": {
@@ -110,8 +118,11 @@
         "steps": { "type": "array", "items": { "type": "string" } },
         "occurrence_count": { "type": ["integer", "null"] },
         "avg_duration_min": { "type": ["number", "null"] },
-        "estimated_weekly_savings_min": { "type": ["number", "null"] },
-        "automation_difficulty": { "$ref": "#/$defs/difficulty" },
+        "estimated_weekly_savings_min": {
+          "type": ["number", "null"],
+          "description": "LLM 估算的每周可省分钟数（非实测）。实测值见 execution_probe.verified_savings_min。"
+        },
+        "automation_difficulty": { "$ref": "#/$defs/level" },
         "skill_suggestion": { "type": "string" }
       },
       "required": ["layer", "workflow_name"]

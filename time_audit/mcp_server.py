@@ -212,18 +212,22 @@ def query_automation_opportunities(params: QueryOpportunitiesInput) -> str:
     Returns:
         str: JSON 字符串：
         {
-          "schema_version": str,   # Automation Opportunity Schema 版本，如 "1.0.0"
+          "schema_version": str,   # Automation Opportunity Schema 版本，如 "0.1.0"
           "report_id": str,
+          "produced_at": str,      # 产出时间（报告生成时间）
+          "producer": str,         # 产出方标识，如 "time-audit/time-audit v2 (LLM-driven)"
           "filters": {"layer": str, "min_confidence": str|null, "max_difficulty": str|null},
           "count": int,
           "opportunities": [
-            # point: {id:"P-01", layer:"point", title, description,
-            #         frequency_hint, skill_suggestion, confidence, evidence_sessions}
-            # line:  {id:"L-01", layer:"line", workflow_name, trigger, apps_involved,
-            #         occurrence_count, avg_duration_min, estimated_weekly_savings_min,
-            #         automation_difficulty, skill_suggestion, steps, confidence, evidence_sessions}
-            # surface:{id:"F-01", layer:"surface", insight_title, observation,
-            #         implication, recommendation, confidence, evidence_sessions}
+            # 每条机会均带 fingerprint（跨报告稳定身份）+ id（报告内位置编号）
+            # point: {id:"P-01", fingerprint:"fp_...", layer:"point", title, description,
+            #         frequency_hint?, skill_suggestion?, confidence, evidence_sessions}
+            # line:  {id:"L-01", fingerprint:"fp_...", layer:"line", workflow_name, trigger?,
+            #         apps_involved?, occurrence_count?, avg_duration_min?,
+            #         estimated_weekly_savings_min?, automation_difficulty?, skill_suggestion?,
+            #         steps?, confidence, evidence_sessions}
+            # surface:{id:"F-01", fingerprint:"fp_...", layer:"surface", insight_title,
+            #         observation, implication?, recommendation?, confidence, evidence_sessions}
           ]
         }
         找不到报告时返回 "Error: ...（含可用 id 或生成命令）"。
@@ -239,17 +243,16 @@ def query_automation_opportunities(params: QueryOpportunitiesInput) -> str:
             min_confidence=params.min_confidence.value if params.min_confidence else None,
             max_difficulty=params.max_difficulty.value if params.max_difficulty else None,
         )
-        return _dumps({
-            "schema_version": report_query.SCHEMA_VERSION,
-            "report_id": report.get("report_meta", {}).get("id", params.report_id or ""),
-            "filters": {
+        return _dumps(report_query.build_envelope(
+            report,
+            opps,
+            filters={
                 "layer": params.layer.value,
                 "min_confidence": params.min_confidence.value if params.min_confidence else None,
                 "max_difficulty": params.max_difficulty.value if params.max_difficulty else None,
             },
-            "count": len(opps),
-            "opportunities": opps,
-        })
+            report_id=params.report_id or "",
+        ))
     except Exception as e:
         return _err(e)
 

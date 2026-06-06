@@ -41,7 +41,7 @@
 - [x] 这是区别于"又一个时间追踪工具"的核心动作，也是分发渠道（出现在 Claude Desktop / Cursor 的 server 列表）。
 
 ### ③ 发布 schema 规范（抢标准第一锤）
-- [x] 把报告的"自动化机会"结构抽成带版本号的公开规范 + 示例。✅ 已完成（AOS v1.0.0：`docs/automation-opportunity-schema.md` + `.v1.json`，附 conformance 测试，真实输出已通过 JSON Schema 校验）
+- [x] 把报告的"自动化机会"结构抽成带版本号的公开规范 + 示例。✅ 已完成（AOS **v0.1.0 Draft**：`docs/automation-opportunity-schema.md` + `automation-opportunity-schema.json`，附 conformance 测试，真实输出经 `jsonschema` 校验。$id 用 host 无关 URN 便于抽成独立 repo；冻结为 1.0 前的待定项见规范『版本与稳定性』）。
 - [ ] 公开邀请对接（Fara / Magentic-UI / OpenClaw / 各 Agent 平台）。
 
 ### ④ 传播 + 第一单输血

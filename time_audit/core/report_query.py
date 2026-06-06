@@ -11,17 +11,22 @@
 import os
 import glob
 import json
+import hashlib
 from typing import Optional, List, Dict, Any
 
 
-# 置信度 / 难度分级。容忍 med / medium 两种写法。
+# 置信度 / 难度分级。入参容忍 med / medium 两种写法，但产出一律归一化为规范拼写。
 _RANK = {"low": 1, "med": 2, "medium": 2, "high": 3}
+
+# 规范拼写：'medium' 仅作入参别名，归一化为 'med'。产出方不得直接发出 'medium'。
+_LEVEL_CANON = {"low": "low", "med": "med", "medium": "med", "high": "high"}
 
 VALID_LAYERS = ("point", "line", "surface", "all")
 
 # Automation Opportunity Schema 版本（语义化）。规范见 docs/automation-opportunity-schema.md。
-# extract_opportunities 产出的每条机会、以及 MCP query 响应都按此版本。
-SCHEMA_VERSION = "1.0.0"
+# 这是 AOS 版本的【唯一真源】：schema .json / 规范 md / MCP 响应都以它为准。
+# 0.x = Draft，结构仍可能破坏性变更；详见规范『版本与稳定性』。
+SCHEMA_VERSION = "0.1.0"
 
 
 def _rank(value: Optional[str]) -> int:
@@ -29,6 +34,31 @@ def _rank(value: Optional[str]) -> int:
     if not value:
         return 0
     return _RANK.get(str(value).strip().lower(), 0)
+
+
+def _norm_level(value: Any, default: Optional[str] = None) -> Optional[str]:
+    """归一化为规范分级 low/med/high（medium→med）。无法识别时返回 default。"""
+    key = str(value).strip().lower() if value else ""
+    return _LEVEL_CANON.get(key, default)
+
+
+def _fingerprint(layer: str, *parts: Any) -> str:
+    """由机会的内容特征派生跨报告稳定身份（execution_probe 回写的 join key）。
+
+    与位置编号 id（P-/L-/F-，仅报告内稳定）不同，fingerprint 只取语义稳定的特征，
+    因此同一个工作流在不同报告里得到同一个指纹，可用于去重与累积。
+    """
+    basis = "|".join([layer] + [str(p).strip().lower() for p in parts if p])
+    return "fp_" + hashlib.sha1(basis.encode("utf-8")).hexdigest()[:12]
+
+
+def _put(d: dict, key: str, value: Any) -> None:
+    """仅当值非空时写入；让"缺失"与"空串"对消费方可区分（可选字段不发空串）。"""
+    if value is None:
+        return
+    if isinstance(value, str) and not value.strip():
+        return
+    d[key] = value
 
 
 def resolve_reports_dir(config_path: Optional[str] = None) -> str:
@@ -149,47 +179,64 @@ def summarize_report(report: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _normalize_point(idx: int, p: dict) -> dict:
-    return {
+    # 公共必填 + 点层必填始终在场；可选字段空则省略（不发空串）。
+    title = p.get("title", "")
+    out = {
         "id": f"P-{idx:02d}",
+        "fingerprint": _fingerprint("point", title),
         "layer": "point",
-        "title": p.get("title", ""),
+        "title": title,
         "description": p.get("description", ""),
-        "frequency_hint": p.get("frequency_hint", ""),
-        "skill_suggestion": p.get("skill_suggestion", ""),
-        "confidence": p.get("confidence", ""),
-        "evidence_sessions": p.get("evidence_sessions", []),
+        "confidence": _norm_level(p.get("confidence"), default="low"),
+        "evidence_sessions": p.get("evidence_sessions") or [],
     }
+    _put(out, "frequency_hint", p.get("frequency_hint"))
+    _put(out, "skill_suggestion", p.get("skill_suggestion"))
+    return out
 
 
 def _normalize_line(idx: int, l: dict) -> dict:
-    return {
+    apps = l.get("apps_involved") or []
+    workflow_name = l.get("workflow_name", "")
+    out = {
         "id": f"L-{idx:02d}",
+        "fingerprint": _fingerprint("line", workflow_name, *sorted(apps)),
         "layer": "line",
-        "workflow_name": l.get("workflow_name", ""),
-        "trigger": l.get("trigger", ""),
-        "apps_involved": l.get("apps_involved", []),
-        "occurrence_count": l.get("occurrence_count"),
-        "avg_duration_min": l.get("avg_duration_min"),
-        "estimated_weekly_savings_min": l.get("estimated_weekly_savings_min"),
-        "automation_difficulty": l.get("automation_difficulty", ""),
-        "skill_suggestion": l.get("skill_suggestion", ""),
-        "steps": l.get("steps", []),
-        "confidence": l.get("confidence", ""),
-        "evidence_sessions": l.get("evidence_sessions", []),
+        "workflow_name": workflow_name,
+        "confidence": _norm_level(l.get("confidence"), default="low"),
+        "evidence_sessions": l.get("evidence_sessions") or [],
     }
+    _put(out, "trigger", l.get("trigger"))
+    if apps:
+        out["apps_involved"] = apps
+    if l.get("steps"):
+        out["steps"] = l["steps"]
+    # 数值字段：保留 None（schema 允许 null，区别于"缺失"）。
+    for k in ("occurrence_count", "avg_duration_min", "estimated_weekly_savings_min"):
+        if k in l:
+            out[k] = l[k]
+    # 难度为可选：能归一化才发，否则省略（绝不发空串/非法枚举）。
+    diff = _norm_level(l.get("automation_difficulty"))
+    if diff is not None:
+        out["automation_difficulty"] = diff
+    _put(out, "skill_suggestion", l.get("skill_suggestion"))
+    return out
 
 
 def _normalize_surface(idx: int, s: dict) -> dict:
-    return {
+    insight_title = s.get("insight_title", "")
+    out = {
         "id": f"F-{idx:02d}",
+        "fingerprint": _fingerprint("surface", insight_title),
         "layer": "surface",
-        "insight_title": s.get("insight_title", ""),
+        "insight_title": insight_title,
         "observation": s.get("observation", ""),
-        "implication": s.get("implication", ""),
-        "recommendation": s.get("recommendation", ""),
-        "confidence": s.get("confidence", ""),
-        "evidence_sessions": s.get("evidence_sessions", []),
+        "confidence": _norm_level(s.get("confidence"), default="low"),
+        "evidence_sessions": s.get("evidence_sessions") or [],
     }
+    _put(out, "implication", s.get("implication"))
+    _put(out, "recommendation", s.get("recommendation"))
+    return out
 
 
 def extract_opportunities(report: Dict[str, Any], layer: str = "all",
@@ -236,3 +283,21 @@ def extract_opportunities(report: Dict[str, Any], layer: str = "all",
         ]
 
     return out
+
+
+def build_envelope(report: Dict[str, Any], opportunities: List[Dict[str, Any]],
+                   filters: Optional[Dict[str, Any]] = None,
+                   report_id: str = "") -> Dict[str, Any]:
+    """把一批机会包成 AOS 信封（顶层结构）。MCP 与 pipe 导出共用此函数，避免漂移。"""
+    meta = report.get("report_meta", {})
+    env: Dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "report_id": meta.get("id", "") or report_id,
+        "produced_at": meta.get("generated_at", ""),
+        "producer": f"time-audit/{meta.get('engine_version', '')}".rstrip("/"),
+    }
+    if filters is not None:
+        env["filters"] = filters
+    env["count"] = len(opportunities)
+    env["opportunities"] = opportunities
+    return env

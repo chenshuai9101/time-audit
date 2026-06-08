@@ -18,6 +18,7 @@ from time_audit.core import (
     frequency_analyzer,
     llm_analyzer,
     report_builder,
+    command_miner,
 )
 
 
@@ -52,6 +53,15 @@ DEFAULT_CONFIG = {
     "reports": {
         "output_dir": os.path.expanduser("~/Desktop/时间审计/reports"),
         "keep_raw_sessions": True,
+    },
+    "sources": {
+        "enabled": ["screenpipe", "shell", "claude", "openclaw"],
+    },
+    "command_mining": {
+        "min_command_count": 5,
+        "min_sequence_count": 3,
+        "min_sequence_len": 2,
+        "max_sequence_len": 5,
     },
     "logging": {"level": "INFO"},
 }
@@ -163,6 +173,12 @@ def run_analysis(cfg: dict, force_dryrun: bool = False) -> dict:
                 sessions, app_freq, llm_cfg,
                 sessions_per_batch=cfg["analysis"]["sessions_per_batch"])
 
+    # 4b. 确定性命令 / 意图挖掘（不依赖 LLM，dry-run 也跑；证据真实、零幻觉）
+    command_result = command_miner.mine_skill_candidates(
+        events, cfg.get("command_mining", {}))
+    print(f"\n⌨️  命令/意图挖掘: 点 {len(command_result['points'])} 条, "
+          f"线 {len(command_result['lines'])} 条（确定性，真实证据）")
+
     # 5. 报告
     report = report_builder.build_report(
         report_id=report_id,
@@ -174,6 +190,7 @@ def run_analysis(cfg: dict, force_dryrun: bool = False) -> dict:
         model_name=llm_cfg.get("model", ""),
         dry_run=dry_run,
         keep_raw=cfg["reports"].get("keep_raw_sessions", True),
+        command_result=command_result,
     )
     paths = report_builder.save_report(report, cfg["reports"]["output_dir"])
     report_builder.present_console_summary(report)
@@ -237,12 +254,17 @@ def main():
     parser.add_argument("--cloud", action="store_true",
                         help="--provider openai 的快捷方式（用云端模型）")
     parser.add_argument("--config", default="", help="配置文件路径")
+    parser.add_argument("--sources", default="",
+                        help="逗号分隔，临时指定启用的源：screenpipe,shell,claude,openclaw")
     parser.add_argument("--version", action="version", version=f"时间审计 v{__version__}")
     args = parser.parse_args()
 
     cfg = load_config(args.config or None)
     if args.days > 0:
         cfg["analysis"]["lookback_days"] = args.days
+    if args.sources:
+        cfg.setdefault("sources", {})["enabled"] = [
+            s.strip() for s in args.sources.split(",") if s.strip()]
     provider_override = args.provider or ("openai" if args.cloud else "")
     if provider_override:
         cfg["llm"]["provider"] = provider_override

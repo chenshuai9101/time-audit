@@ -48,6 +48,25 @@ reports:
   output_dir: "~/Desktop/时间审计/reports"
   keep_raw_sessions: true               # 报告内附带压缩后的 sessions（便于调试）
 
+# 多源数据适配器：任意"日常使用中可优化的流程化来源"都可插拔接入。
+# 缺省全部启用；也可经 CLI --sources screenpipe,shell 临时收窄。
+sources:
+  enabled: ["screenpipe", "shell", "claude", "openclaw"]
+  shell:
+    history_path: ""        # 留空自动找 ~/.zsh_history / ~/.bash_history
+  claude:
+    projects_dir: ""        # 留空用 ~/.claude/projects（自动跳过 claude-mem 观察者会话）
+  openclaw:
+    base_dir: ""            # 留空用 ~/.openclaw（best-effort 解析 cron 自动化任务）
+
+# 确定性命令 / 意图挖掘（不依赖 LLM，证据真实、零幻觉）：
+# 命令层的重复最直接说明"该做成脚本 / skill"。
+command_mining:
+  min_command_count: 5      # 单命令重复 ≥ 此值 → 点候选（alias/snippet）
+  min_sequence_count: 3     # 命令序列重复 ≥ 此值 → 线候选（脚本/skill）
+  min_sequence_len: 2       # 序列最短步数
+  max_sequence_len: 5       # 序列最长步数
+
 logging:
   level: "INFO"
   file: "~/Desktop/时间审计/engine.log"

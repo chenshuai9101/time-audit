@@ -30,10 +30,13 @@ def discover_screenpipe_db() -> Optional[str]:
     return None
 
 
-def read_screenpipe_events(db_path: str, days: int = 14) -> list:
+def read_screenpipe_events(db_path: str, days: int = 14, fallback_mock: bool = True) -> list:
     """
     从Screenpipe数据库读取事件日志
     返回标准化事件列表: [{timestamp, app, window, event_type, content, duration}]
+
+    fallback_mock=True 时，库中无事件则回退到模拟数据（保留旧 CLI 行为）；
+    适配器层用 fallback_mock=False，让"无数据"如实返回空，mock 兜底交给编排层。
     """
     if not os.path.exists(db_path):
         raise FileNotFoundError(f"数据库不存在: {db_path}")
@@ -153,7 +156,7 @@ def read_screenpipe_events(db_path: str, days: int = 14) -> list:
     
     if not events:
         print("  ⚠️  Screenpipe数据库中没有找到事件记录")
-        return generate_mock_events(days)
+        return generate_mock_events(days) if fallback_mock else []
     
     # 校准时间戳
     for e in events:
@@ -325,31 +328,22 @@ def generate_mock_events(days: int = 14) -> list:
 
 
 def load_events(config: dict) -> list:
-    """统一入口：发现数据源并加载事件"""
-    print("\n📂 数据读取层")
-    
-    db_path = config.get("screenpipe", {}).get("db_path", "")
-    auto_discover = config.get("screenpipe", {}).get("auto_discover", True)
+    """统一入口：通过多源适配器注册表采集并合并事件。
+
+    缺省启用全部源（screenpipe / shell / claude / openclaw）；
+    可经 config 的 sources.enabled 或 CLI --sources 收窄。
+    所有源都无数据时回退到模拟数据（保留 demo 能力）。
+    """
+    print("\n📂 数据读取层（多源）")
+    from time_audit.sources import registry
+
     days = config.get("analysis", {}).get("lookback_days", 14)
-    
-    if db_path and os.path.exists(db_path):
-        print(f"  📍 使用指定数据库: {db_path}")
-        return read_screenpipe_events(db_path, days)
-    
-    if auto_discover:
-        found = discover_screenpipe_db()
-        if found:
-            return read_screenpipe_events(found, days)
-    
-    # 检查test_data目录
-    test_csv = Path(__file__).parent.parent / "test_data" / "events.csv"
-    if test_csv.exists():
-        print(f"  📍 使用测试CSV: {test_csv}")
-        return read_custom_csv(str(test_csv), days)
-    
-    # 回退到模拟数据
-    print("  ⚠️  未找到真实数据源，使用模拟数据")
-    return generate_mock_events(days)
+    events = registry.collect_all(config, days)
+
+    if not events:
+        print("  ⚠️  所有启用的源均无数据，回退到模拟数据")
+        return generate_mock_events(days)
+    return events
 
 
 def format_events_summary(events: list) -> str:

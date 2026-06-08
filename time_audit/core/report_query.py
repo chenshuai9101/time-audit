@@ -192,6 +192,9 @@ def _normalize_point(idx: int, p: dict) -> dict:
     }
     _put(out, "frequency_hint", p.get("frequency_hint"))
     _put(out, "skill_suggestion", p.get("skill_suggestion"))
+    _put(out, "modality", p.get("modality"))
+    if p.get("evidence_samples"):
+        out["evidence_samples"] = p["evidence_samples"]
     return out
 
 
@@ -220,6 +223,7 @@ def _normalize_line(idx: int, l: dict) -> dict:
     if diff is not None:
         out["automation_difficulty"] = diff
     _put(out, "skill_suggestion", l.get("skill_suggestion"))
+    _put(out, "modality", l.get("modality"))
     return out
 
 

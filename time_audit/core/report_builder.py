@@ -10,12 +10,65 @@ import json
 from datetime import datetime
 from typing import List, Dict
 
+from time_audit.core import command_miner
+
+
+def validate_evidence(items: list, valid_ids: set) -> list:
+    """校验 OCR 层洞察的 evidence_sessions：剔除不存在的 session id；
+    若一条洞察的证据全是虚构（无任何真实 id 残留），整条丢弃。
+
+    命令层洞察（无 evidence_sessions）不参与校验，原样保留。
+    这是修复"证据是假的"致命问题的关键一步。
+    """
+    out = []
+    for it in items:
+        if "evidence_sessions" in it:
+            good = [s for s in (it.get("evidence_sessions") or []) if s in valid_ids]
+            if not good:
+                continue                      # 证据全假 → 丢弃
+            it = dict(it)
+            it["evidence_sessions"] = good
+        out.append(it)
+    return out
+
+
+def _tag_modality(items: list, modality: str) -> list:
+    """给未标注 modality 的洞察打上来源模态。"""
+    tagged = []
+    for it in items:
+        if "modality" not in it:
+            it = dict(it)
+            it["modality"] = modality
+        tagged.append(it)
+    return tagged
+
 
 def build_report(report_id: str, llm_result: dict, sessions: list,
                  app_freq: dict, hours: list, events_total: int,
-                 model_name: str, dry_run: bool, keep_raw: bool) -> dict:
-    """构建完整结构化报告"""
+                 model_name: str, dry_run: bool, keep_raw: bool,
+                 command_result: dict = None) -> dict:
+    """构建完整结构化报告。
+
+    command_result：来自 command_miner 的确定性命令 / 意图层候选，
+    与 LLM 的 OCR 层洞察合并，并各带 modality 标签。
+    """
     days = sorted({s["day"] for s in sessions}) if sessions else []
+    valid_ids = {s["id"] for s in sessions if "id" in s}
+
+    # OCR 层：先证据校验（去幻觉），再打 modality=ocr
+    points = _tag_modality(
+        validate_evidence(llm_result.get("points", []), valid_ids), "ocr")
+    lines = _tag_modality(
+        validate_evidence(llm_result.get("lines", []), valid_ids), "ocr")
+    surfaces = _tag_modality(
+        validate_evidence(llm_result.get("surfaces", []), valid_ids), "ocr")
+
+    # 命令 / 意图层：确定性候选，证据真实
+    if command_result:
+        points = points + command_miner.as_report_points(
+            command_result.get("points", []))
+        lines = lines + command_miner.as_report_lines(
+            command_result.get("lines", []))
 
     report = {
         "report_meta": {
@@ -34,9 +87,9 @@ def build_report(report_id: str, llm_result: dict, sessions: list,
         },
         "app_breakdown": app_freq.get("top_apps", []),
         "ai_insights": {
-            "points": llm_result.get("points", []),
-            "lines": llm_result.get("lines", []),
-            "surfaces": llm_result.get("surfaces", []),
+            "points": points,
+            "lines": lines,
+            "surfaces": surfaces,
         },
     }
 
@@ -138,14 +191,28 @@ def _render_markdown(report: dict) -> str:
     return "\n".join(lines)
 
 
+def _modality_tag(item: dict) -> str:
+    m = item.get("modality")
+    return {"command": " · 来源 命令/意图", "ocr": " · 来源 屏幕"}.get(m, "")
+
+
+def _evidence_line(item: dict) -> str:
+    """命令层用真实样例原文作证据；OCR 层用 session id。"""
+    if item.get("modality") == "command":
+        samples = item.get("evidence_samples") or []
+        return f"- 证据（真实样例）：{' / '.join(samples) if samples else '（命令统计）'}"
+    return f"- 证据：{', '.join(item.get('evidence_sessions', []))}"
+
+
 def _render_point(idx: int, p: dict) -> list:
     return [
-        f"### P-{idx:02d} {p.get('title', '(无标题)')} · 置信度 {p.get('confidence', '?')}",
+        f"### P-{idx:02d} {p.get('title', '(无标题)')} · 置信度 "
+        f"{p.get('confidence', '?')}{_modality_tag(p)}",
         "",
         f"- 描述：{p.get('description', '')}",
         f"- 频次：{p.get('frequency_hint', '')}",
         f"- 建议：{p.get('skill_suggestion', '')}",
-        f"- 证据：{', '.join(p.get('evidence_sessions', []))}",
+        _evidence_line(p),
         "",
     ]
 
@@ -156,7 +223,7 @@ def _render_line(idx: int, l: dict) -> list:
     return [
         f"### L-{idx:02d} {l.get('workflow_name', '(无名)')} · "
         f"难度 {l.get('automation_difficulty', '?')} · "
-        f"置信度 {l.get('confidence', '?')}",
+        f"置信度 {l.get('confidence', '?')}{_modality_tag(l)}",
         "",
         f"- 触发：{l.get('trigger', '')}",
         f"- 涉及应用：{', '.join(l.get('apps_involved', []))}",
@@ -164,7 +231,7 @@ def _render_line(idx: int, l: dict) -> list:
         f"- 单次耗时：约 {l.get('avg_duration_min', '?')} 分钟",
         f"- 预计周节省：{l.get('estimated_weekly_savings_min', '?')} 分钟",
         f"- 建议：{l.get('skill_suggestion', '')}",
-        f"- 证据：{', '.join(l.get('evidence_sessions', []))}",
+        _evidence_line(l),
         f"- 步骤：",
         step_block if steps else "  （无）",
         "",

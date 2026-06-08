@@ -11,3 +11,5 @@ reports/
 last_report.json
 .venv/
 venv/
+.pytest_cache/
+.DS_Store

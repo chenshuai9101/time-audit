@@ -12,6 +12,8 @@ import argparse
 from datetime import datetime
 
 from time_audit import __version__
+from time_audit.fde.cli import build_parser, handle_fde_command
+
 from time_audit.core import (
     db_reader,
     event_compressor,
@@ -257,6 +259,9 @@ def main():
     parser.add_argument("--sources", default="",
                         help="逗号分隔，临时指定启用的源：screenpipe,shell,claude,openclaw")
     parser.add_argument("--version", action="version", version=f"时间审计 v{__version__}")
+    subparsers = parser.add_subparsers(dest="fde_cmd")
+    build_parser(subparsers)
+
     args = parser.parse_args()
 
     cfg = load_config(args.config or None)
@@ -268,6 +273,10 @@ def main():
     provider_override = args.provider or ("openai" if args.cloud else "")
     if provider_override:
         cfg["llm"]["provider"] = provider_override
+
+    if args.fde_cmd:
+        handle_fde_command(args)
+        return
 
     if args.check_llm:
         check_llm(cfg)

@@ -30,9 +30,11 @@ except ImportError:  # 给出可执行的下一步，而不是裸 traceback
 from pydantic import BaseModel, Field, ConfigDict
 
 from time_audit.core import report_query
+from time_audit.fde.mcp_tools import init_mcp_tools
 
 
 mcp = FastMCP("time_audit_mcp")
+init_mcp_tools(mcp)
 
 
 # ── 枚举：约束入参取值 ───────────────────────────────────────────────

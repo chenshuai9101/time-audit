@@ -8,8 +8,6 @@
 import os
 import json
 from datetime import datetime
-from typing import List, Dict
-
 from time_audit.core import command_miner
 
 
@@ -232,7 +230,7 @@ def _render_line(idx: int, l: dict) -> list:
         f"- 预计周节省：{l.get('estimated_weekly_savings_min', '?')} 分钟",
         f"- 建议：{l.get('skill_suggestion', '')}",
         _evidence_line(l),
-        f"- 步骤：",
+        "- 步骤：",
         step_block if steps else "  （无）",
         "",
     ]

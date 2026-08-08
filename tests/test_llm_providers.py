@@ -5,12 +5,10 @@ provider 抽象层单元测试 —— 全离线，不打真实网络。
     python -m unittest tests.test_llm_providers
     或  python -m pytest tests/
 """
-import io
 import json
 import unittest
 from unittest import mock
 
-from time_audit.core import llm_providers as P
 from time_audit.core.llm_providers import (
     get_provider, OllamaProvider, OpenAIProvider, ProviderError,
 )

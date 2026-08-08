@@ -5,7 +5,6 @@
   Screenpipe SQLite → 事件读取 → 事件压缩 → 本地 LLM 三层分析 → 报告
 """
 import os
-import sys
 import json
 import yaml
 import argparse

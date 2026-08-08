@@ -1,4 +1,4 @@
-"""
+r"""
 shell_history 适配器 —— 从 zsh / bash 历史挖命令事件。
 
 处理三种现实情况：

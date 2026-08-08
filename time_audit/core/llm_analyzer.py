@@ -10,8 +10,6 @@
 本模块只关心"分批 + 跑三层 + 合并"。
 """
 import json
-from typing import Optional
-
 from time_audit.core import prompts, event_compressor
 from time_audit.core.llm_providers import get_provider, BaseProvider
 

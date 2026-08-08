@@ -5,10 +5,8 @@
 """
 import sqlite3
 import os
-import json
 import csv
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Optional
 
 

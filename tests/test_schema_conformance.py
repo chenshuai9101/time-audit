@@ -21,7 +21,6 @@ import unittest
 from time_audit.core import report_query as RQ
 
 try:
-    import jsonschema
     from jsonschema import Draft202012Validator
     _HAS_JSONSCHEMA = True
 except Exception:  # pragma: no cover - 取决于环境
